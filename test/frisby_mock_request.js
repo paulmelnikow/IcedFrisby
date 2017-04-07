@@ -162,6 +162,32 @@ describe('Frisby matchers', function() {
     restoreGlobalSetup();
   });
 
+  it('before callbacks should be invoked in sequence before the request', function() {
+    var sequence = [];
+
+    var mockFn = mockRequest.mock()
+      .get('/test-object')
+      .respond({
+          statusCode: 200,
+          body: fixtures.singleObject
+      })
+      .run();
+    var requestFn = function () {
+      sequence.push('request');
+      return mockFn.apply(this, arguments);
+    };
+
+    frisby.create(this.test.title)
+      .before(function () { sequence.push('before-one'); })
+      .before(function () { sequence.push('before-two'); })
+      .get('http://mock-request/test-object', {mock: requestFn})
+      .after(function () {
+        var expectedSequence = ['before-one', 'before-two', 'request'];
+        expect(sequence).to.deep.equal(expectedSequence);
+      })
+      .toss();
+  });
+
   it('expectJSON should test EQUALITY for a SINGLE object', function() {
       // Mock API
       var mockFn = mockRequest.mock()
