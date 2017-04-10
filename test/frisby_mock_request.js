@@ -702,6 +702,62 @@ describe('Frisby matchers', function() {
       .toss();
   });
 
+  describe('after() callbacks', function() {
+    it('should be invoked in sequence after a successful request', function () {
+      var sequence = [];
+      var mockFn = mockRequest.mock()
+        .get('/test-object')
+        .respond({
+            statusCode: 200,
+            body: fixtures.singleObject
+        })
+        .run();
+      var requestFn = function () {
+        sequence.push('request');
+        return mockFn.apply(this, arguments);
+      };
+
+      frisby.create(this.test.title)
+        .get('http://mock-request/test-object', {mock: requestFn})
+        .expectStatus(200)
+        .after(function () { sequence.push('after-one'); })
+        .after(function () { sequence.push('after-two'); })
+        .after(function () {
+          var expectedSequence = ['request', 'after-one', 'after-two'];
+          expect(sequence).to.deep.equal(expectedSequence);
+        })
+        .toss();
+    });
+
+    describe('should not be invoked after an failed expectation', function() {
+      var mockFn = mockRequest.mock()
+        .get('/test-object')
+        .respond({
+            statusCode: 200,
+            body: fixtures.singleObject
+        })
+        .run();
+
+      var test = frisby.create('aaa')
+        .get('http://mock-request/test-object', {mock: mockFn})
+        .expectStatus(204)
+        .after(function () { expect.fail("The after function shouldn't be invoked"); });
+
+      // Intercept the raised exception to prevent Mocha from receiving it.
+      test._invokeExpects = function (it, done) {
+        try {
+          test.prototype._invokeExpects.call(this, it, done);
+        } catch (e) {
+          done();
+          return;
+        }
+        // If we catch the exeption, as expected, we should never get here.
+        expect.fail('The failed expectation should have raised an exception');
+      };
+
+      test.toss();
+    });
+  });
 
   it('Frisby basicAuth should set the correct HTTP Authorization header', function() {
 
@@ -822,29 +878,35 @@ describe('Frisby matchers', function() {
       .toss();
   });
 
-  it('globalSetup should be able to set baseURI', function() {
-    nock('http://httpbin.org', { allowUnmocked: true })
-     .post('/test')
-     .once()
-     .reply(200, function(uri, requestBody) {
-       return requestBody;
-     });
+  describe('globalSetup', function() {
+    it('should be able to set baseURI', function() {
+      nock('http://httpbin.org', { allowUnmocked: true })
+       .post('/test')
+       .once()
+       .reply(200, function(uri, requestBody) {
+         return requestBody;
+       });
 
-    frisby.globalSetup({
-      request: {
-        baseUri: 'http://httpbin.org'
-      }
+      frisby.globalSetup({
+        request: {
+          baseUri: 'http://httpbin.org'
+        }
+      });
+
+      frisby.create(this.test.title)
+        .post('/test', {}, {
+          body: 'some body here'
+        })
+        .expectStatus(200)
+        .expectBodyContains('some body here')
+        .after(function() {
+          expect(this.current.outgoing.uri).to.equal('http://httpbin.org/test');
+        })
+      .toss();
     });
 
-    frisby.create(this.test.title)
-      .post('/test', {}, {
-        body: 'some body here'
-      })
-      .expectStatus(200)
-      .expectBodyContains('some body here')
-      .after(function() {
-        expect(this.current.outgoing.uri).to.equal('http://httpbin.org/test');
-      })
-    .toss();
+    afterEach(function() {
+      frisby.globalSetup();
+    });
   });
 });
